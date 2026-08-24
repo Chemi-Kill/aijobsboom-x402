@@ -1,0 +1,32 @@
+# AIJOBSBOOM x402 data API — Cloudflare Worker config.
+#
+# Setup:
+#   1. npm install
+#   2. wrangler secret put X402_WALLET      # the Base address that receives USDC
+#   3. (optional) wrangler secret put FACILITATOR_URL   # override the default facilitator
+#   4. npm run deploy
+#
+# Data updates: after each pipeline.py run, copy the fresh archive/stats.csv
+# over data/stats.csv, run `npm run teaser` to refresh teaser.html, then
+# redeploy. The CSV is bundled into the Worker at build time (see [[rules]]
+# below) — there is no runtime data fetch, so a stale bundle just means a
+# stale /snapshot and /series until the next deploy.
+
+name = "aijobsboom-x402"
+main = "worker.js"
+compatibility_date = "2026-08-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Bundle data/stats.csv as an importable text string (`import csv from "./data/stats.csv"`).
+[[rules]]
+type = "Text"
+globs = ["**/*.csv"]
+fallthrough = true
+
+# Non-secret config. Prices are USD strings consumed by x402-hono (e.g. "$0.01").
+# X402_WALLET and FACILITATOR_URL are secrets — set with `wrangler secret put`,
+# never committed here.
+[vars]
+X402_NETWORK = "base"
+SNAPSHOT_PRICE_USDC = "0.01"
+SERIES_PRICE_USDC = "0.10"

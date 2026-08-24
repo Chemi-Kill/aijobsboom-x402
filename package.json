@@ -1,0 +1,24 @@
+{
+  "name": "aijobsboom-x402",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "x402-gated data API for aijobsboom.com pipeline stats, plus an MCP server wrapper.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "teaser": "node generate-teaser.js",
+    "mcp": "node mcp-server.js"
+  },
+  "dependencies": {
+    "hono": "*",
+    "x402-hono": "*",
+    "@modelcontextprotocol/sdk": "*",
+    "x402-fetch": "*",
+    "viem": "*",
+    "zod": "*"
+  },
+  "devDependencies": {
+    "wrangler": "*"
+  }
+}
