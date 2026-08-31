@@ -30,22 +30,20 @@ subscriptions required.
 ## MCP server
 
 `mcp-server.js` wraps the API as two MCP tools, `get_snapshot` and
-`get_series`. It currently holds its own Base wallet and pays via
-`x402-fetch`/viem — **not yet updated for Solana.** Since the Worker now
-requires payment on Solana, this client needs a Solana keypair and an
-SVM-capable payer (the `x402` SDK's `@solana/kit` client) before it will work
-against the live endpoint again. Treat it as broken until that follow-up
-lands.
+`get_series`. It holds its own Solana wallet (funded with USDC) and pays for
+each gated call itself via `x402-fetch`'s Solana signer, so the calling
+agent just invokes a tool and gets JSON back.
 
 ```bash
 npm install
 AIJOBSBOOM_API_BASE=https://aijobsboom-x402.sonofgus.workers.dev \
-X402_CLIENT_PRIVATE_KEY=0x... \
+X402_CLIENT_PRIVATE_KEY=... \
 npm run mcp
 ```
 
-`X402_CLIENT_PRIVATE_KEY` is the 0x-prefixed private key of a Base wallet
-funded with USDC — never commit this.
+`X402_CLIENT_PRIVATE_KEY` is the base58-encoded secret key of a Solana
+wallet funded with USDC (the format Phantom/Solflare export as "private
+key") — never commit this.
 
 ## Worker deployment
 

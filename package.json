@@ -15,7 +15,6 @@
     "x402-hono": "*",
     "@modelcontextprotocol/sdk": "*",
     "x402-fetch": "*",
-    "viem": "*",
     "zod": "*"
   },
   "devDependencies": {
