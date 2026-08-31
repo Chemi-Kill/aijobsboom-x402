@@ -122,8 +122,8 @@ what this API sells.
 
 | Endpoint | Price | Network |
 |---|---|---|
-| `GET /snapshot` | $0.01 USDC | Base |
-| `GET /series?weeks=N` | $0.10 USDC | Base |
+| `GET /snapshot` | $0.01 USDC | Solana |
+| `GET /series?weeks=N` | $0.10 USDC | Solana |
 | `GET /methodology` | free | — |
 
 Payment is enforced via [x402](https://x402.org), Coinbase's open HTTP 402

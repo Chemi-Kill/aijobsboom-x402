@@ -21,8 +21,8 @@ for why.
 | Endpoint | Price | Network |
 |---|---|---|
 | `GET /methodology` | free | — |
-| `GET /snapshot` | $0.01 USDC | Base |
-| `GET /series?weeks=N` | $0.10 USDC | Base |
+| `GET /snapshot` | $0.01 USDC | Solana |
+| `GET /series?weeks=N` | $0.10 USDC | Solana |
 
 Payment is enforced via [x402](https://x402.org) — no accounts, API keys, or
 subscriptions required.
@@ -30,9 +30,12 @@ subscriptions required.
 ## MCP server
 
 `mcp-server.js` wraps the API as two MCP tools, `get_snapshot` and
-`get_series`. It holds its own Base wallet (funded with USDC) and pays for
-each gated call itself via `x402-fetch`, so the calling agent just invokes a
-tool and gets JSON back.
+`get_series`. It currently holds its own Base wallet and pays via
+`x402-fetch`/viem — **not yet updated for Solana.** Since the Worker now
+requires payment on Solana, this client needs a Solana keypair and an
+SVM-capable payer (the `x402` SDK's `@solana/kit` client) before it will work
+against the live endpoint again. Treat it as broken until that follow-up
+lands.
 
 ```bash
 npm install
@@ -48,7 +51,7 @@ funded with USDC — never commit this.
 
 ```bash
 npm install
-wrangler secret put X402_WALLET      # the Base address that receives USDC
+wrangler secret put X402_WALLET      # the Solana address that receives USDC
 wrangler secret put FACILITATOR_URL  # optional, overrides the default facilitator
 npm run deploy
 ```

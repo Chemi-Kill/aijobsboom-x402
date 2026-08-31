@@ -5,8 +5,8 @@
 // methodology.md for the full column dictionary and scrub-rule writeup.
 //
 // GET /methodology — free, plain text.
-// GET /snapshot     — latest pipeline-run row as JSON. $0.01 USDC on Base.
-// GET /series?weeks=N — last N rows as JSON array, oldest -> newest. $0.10 USDC on Base.
+// GET /snapshot     — latest pipeline-run row as JSON. $0.01 USDC on Solana.
+// GET /series?weeks=N — last N rows as JSON array, oldest -> newest. $0.10 USDC on Solana.
 //
 // x402-hono's paymentMiddleware is built per-request (not at module scope)
 // because Cloudflare Workers only expose `env` (wallet address, prices,
@@ -77,8 +77,8 @@ outside the redistribution terms that JSearch (RapidAPI) and Adzuna
 place on the underlying listing data aijobsboom pulls from.
 
 PRICING
-GET /snapshot -- $0.01 USDC on Base
-GET /series?weeks=N -- $0.10 USDC on Base
+GET /snapshot -- $0.01 USDC on Solana
+GET /series?weeks=N -- $0.10 USDC on Solana
 GET /methodology -- free
 `;
 
@@ -87,8 +87,8 @@ app.get("/methodology", (c) => c.text(METHODOLOGY_TEXT));
 app.use("/snapshot", async (c, next) => {
   const mw = paymentMiddleware(
     c.env.X402_WALLET,
-    { "/snapshot": { price: `$${c.env.SNAPSHOT_PRICE_USDC || "0.01"}`, network: c.env.X402_NETWORK || "base" } },
-    { url: c.env.FACILITATOR_URL || "https://x402.org/facilitator" },
+    { "/snapshot": { price: `$${c.env.SNAPSHOT_PRICE_USDC || "0.01"}`, network: c.env.X402_NETWORK || "solana" } },
+    { url: c.env.FACILITATOR_URL || "https://facilitator.payai.network" },
   );
   return mw(c, next);
 });
@@ -101,8 +101,8 @@ app.get("/snapshot", (c) => {
 app.use("/series", async (c, next) => {
   const mw = paymentMiddleware(
     c.env.X402_WALLET,
-    { "/series": { price: `$${c.env.SERIES_PRICE_USDC || "0.10"}`, network: c.env.X402_NETWORK || "base" } },
-    { url: c.env.FACILITATOR_URL || "https://x402.org/facilitator" },
+    { "/series": { price: `$${c.env.SERIES_PRICE_USDC || "0.10"}`, network: c.env.X402_NETWORK || "solana" } },
+    { url: c.env.FACILITATOR_URL || "https://facilitator.payai.network" },
   );
   return mw(c, next);
 });

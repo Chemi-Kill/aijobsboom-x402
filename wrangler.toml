@@ -2,7 +2,7 @@
 #
 # Setup:
 #   1. npm install
-#   2. wrangler secret put X402_WALLET      # the Base address that receives USDC
+#   2. wrangler secret put X402_WALLET      # the Solana address that receives USDC
 #   3. (optional) wrangler secret put FACILITATOR_URL   # override the default facilitator
 #   4. npm run deploy
 #
@@ -27,6 +27,6 @@ fallthrough = true
 # X402_WALLET and FACILITATOR_URL are secrets — set with `wrangler secret put`,
 # never committed here.
 [vars]
-X402_NETWORK = "base"
+X402_NETWORK = "solana"
 SNAPSHOT_PRICE_USDC = "0.01"
 SERIES_PRICE_USDC = "0.10"

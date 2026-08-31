@@ -158,8 +158,8 @@ ${flagChips}
   <footer>
     <p>This page is generated automatically from the latest pipeline run and is always free. Historical data, weekly series, and programmatic access (including MCP tools for agents) are available for a small per-call fee via the <b>AIJOBSBOOM x402 API</b>:</p>
     <p style="margin-top:8px">
-      <code>GET /snapshot</code> — $0.01 USDC on Base &nbsp;·&nbsp;
-      <code>GET /series?weeks=N</code> — $0.10 USDC on Base &nbsp;·&nbsp;
+      <code>GET /snapshot</code> — $0.01 USDC on Solana &nbsp;·&nbsp;
+      <code>GET /series?weeks=N</code> — $0.10 USDC on Solana &nbsp;·&nbsp;
       <code>GET /methodology</code> — free
     </p>
 
@@ -184,7 +184,7 @@ ${flagChips}
 
       <p style="margin-top:12px;color:var(--bone);font-weight:600">How to pay</p>
       <ol style="margin:4px 0 0 18px;padding:0">
-        <li>Get a wallet on <b>Base</b> (Coinbase Wallet or MetaMask configured for Base).</li>
+        <li>Get a <b>Solana</b> wallet (Phantom, Solflare, or Coinbase Wallet configured for Solana).</li>
         <li>Fund it with a few dollars of <b>USDC</b> — at $0.01–$0.10 per call, that covers hundreds of requests.</li>
         <li>Point your script or agent's HTTP client at the endpoint (or use the <code>aijobsboom-x402</code> MCP server) — payment happens automatically per request, no manual approval needed.</li>
       </ol>
