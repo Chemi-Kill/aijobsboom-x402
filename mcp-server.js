@@ -6,16 +6,24 @@
 // via x402-fetch, so the calling agent just invokes a tool and gets JSON
 // back -- no wallet or payment handling on the agent's side.
 //
-// Env vars:
+// Env vars (loaded from .env next to this file, if present):
 //   AIJOBSBOOM_API_BASE       base URL of the deployed Worker (default below)
 //   X402_CLIENT_PRIVATE_KEY   base58-encoded secret key of the paying Solana
 //                             wallet (the format Phantom/Solflare export, and
 //                             what solana-keygen produces once base58-encoded)
 
+import { fileURLToPath } from "node:url";
+import path from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { createSigner, wrapFetchWithPayment } from "x402-fetch";
+
+try {
+  process.loadEnvFile(path.join(path.dirname(fileURLToPath(import.meta.url)), ".env"));
+} catch {
+  // no .env file next to this script -- fall back to the ambient environment
+}
 
 const API_BASE = process.env.AIJOBSBOOM_API_BASE || "https://x402-api.aijobsboom.com";
 const PRIVATE_KEY = process.env.X402_CLIENT_PRIVATE_KEY;
