@@ -71,6 +71,15 @@ Order matters — a row that matches an earlier rule never reaches a later one.
    caught by rule 6. "Control Systems Engineer" and similar PLC/SCADA/
    instrumentation/automation titles are preserved as plant-floor trades work.
 
+10. **Desk-title additions (Sep 2026)** — sales/HR/back-office titles that slipped
+    past rule 9 ("Client Executive," "Business Process & Systems," "People
+    Systems," "Workday Architect," "Internal Audit") and machine-learning-sense
+    "Transformers"/"Multimodal" titles are dropped; electrical transformer and
+    substation jobs are deliberately preserved.
+11. **"N Locations" placeholders nulled** — when a feed lists the location as
+    "18 Locations," that value is cleared (the row and its state region stay);
+    it isn't a place and must not count as a new location.
+
 ## Column dictionary
 
 | Column | Meaning |
@@ -103,9 +112,30 @@ Order matters — a row that matches an earlier rule never reaches a later one.
 | `hot` | Rows marked "hot" demand (top HOT-score rows, capped at 450). |
 | `north_dakota` | Rows located in North Dakota. |
 | `montana` | Rows located in Montana. |
+| `grid_demand_pjm` | Weekly average electricity demand for the PJM balancing authority. **Source:** EIA API v2, `electricity/rto/region-data` (EIA-930 hourly grid data), `type=D`, respondent `PJM`. **Unit:** MWh — an EIA-930 hourly reading is numerically the average MW drawn during that hour, so this is the mean of the trailing 168 hourly readings (7 days) as of the pipeline run. **Cadence:** recomputed every pipeline run. **Null-on-failure:** null if no `eia` key is configured in `keys.json`, or if the EIA API call fails or returns no data for that run — a failed pull never blocks the run. |
+| `grid_demand_miso` | Same as `grid_demand_pjm`, for the MISO balancing authority. Same source, unit, cadence, and null-on-failure behavior. |
+| `nd_rig_count` | Current active drilling rig count in North Dakota. **Source: North Dakota Department of Mineral Resources (ND DMR)**, Current Active Drilling Rig List, `dmr.nd.gov/oilgas/riglist.asp` — public-domain state government data, updated daily. This is a distinct data source from `grid_demand_pjm`/`grid_demand_miso` and unrelated to EIA. **Unit:** count of active rigs (one row on the ND DMR page per rig; the page publishes no rig-count total, so this pipeline counts data rows in the results table itself). **Cadence:** recomputed every pipeline run, reflecting whatever ND DMR had live at run time. **Null-on-failure:** the ND DMR page is plain HTML with no API, so this is parsed defensively — the pipeline finds the results table by a stable `summary` attribute (not by position), and returns null on ANY surprise: the table isn't found (e.g. the page was redesigned), zero rows parse, or the parsed count falls outside a sane range. It never guesses a number. |
+| `wti_price` | Weekly average Cushing, OK WTI crude oil spot price. **Source:** EIA API v2, `petroleum/pri/spt`, series `RWTC` — confirmed against EIA's own live API (route, facet name, and series id). **Unit:** $/BBL (dollars per barrel). EIA publishes this route's `weekly` frequency as its own computed average — this pipeline does not average daily prices itself. **Cadence:** latest published week as of the pipeline run. **Null-on-failure:** null if no `eia` key is configured in `keys.json`, or the EIA call fails or returns no data. |
+| `henry_hub_price` | Weekly average Henry Hub natural gas spot price. **Source:** EIA API v2, `natural-gas/pri/fut`, series `RNGWHHD` — confirmed against EIA's own live API. **Unit:** $/MMBTU (dollars per million British thermal units). Same native-weekly-average note as `wti_price`. **Cadence / null-on-failure:** same as `wti_price`. |
+| `crude_prod_us` | Latest month's U.S. crude oil field production (EIA-914 survey). **Source:** EIA API v2, `petroleum/crd/crpdn`, `duoarea=NUS`, `product=EPC0` (Crude Oil), `process=FPF` (Field Production), pinned to series `MCRFPUS2` specifically — the same facet combination without a series id also matches a *different* series (`MCRFPUS1`, thousand barrels for the whole month, not a rate), so `series` is set explicitly to avoid pulling the wrong one. **Unit:** MBBL/D (thousand barrels per day). **Cadence:** EIA-914 is a monthly survey published with a lag — observed ~3 months behind the pipeline run date as of this writing (e.g. a run in early September saw June data). **Null-on-failure:** null if no `eia` key is configured, or the EIA call fails or returns no data. |
+| `crude_prod_nd` | Same as `crude_prod_us`, for North Dakota (`duoarea=SND`, series `MCRFPND2`). Same source, unit, cadence, and null-on-failure behavior. |
+| `crude_prod_tx` | Same as `crude_prod_us`, for Texas (`duoarea=STX`, series `MCRFPTX2`). Same source, unit, cadence, and null-on-failure behavior. **Note:** EIA's own route documentation states its Texas estimate is independently modeled and normally differs from production figures reported by the Texas Railroad Commission (RRC) — this pipeline does not pull anything from the RRC (evaluated and passed on; see project history), so there's no redundancy or reconciliation between the two to worry about. |
+| `oilgas_support_employment` | Latest month's U.S. employment in Support Activities for Oil and Gas Operations (NAICS 213112). **Source:** BLS CES (Current Employment Statistics), series `CES1021311201` — confirmed directly against BLS's own official Series Report page (`data.bls.gov`; Super Sector: Mining and logging; Industry: Support activities for oil and gas operations; NAICS 213112), seasonally adjusted. **Unit:** thousands of employees, per BLS's own convention for this series. **Cadence:** latest published month as of the pipeline run; BLS publishes monthly with a short lag, and recent months are often marked preliminary and revised later. **Null-on-failure:** null if the BLS API call fails or returns an empty series. Same optional `bls` key behavior as `jolts_construction_openings`. |
+| `jolts_construction_openings` | Latest month's Construction (NAICS 23) job openings. **Source:** BLS public API v2 (`api.bls.gov/publicAPI/v2/timeseries/data/`), series `JTS230000000000000JOL` (Job Openings Level, Construction, seasonally adjusted). **Unit:** thousands of openings, per BLS's own convention for this series (e.g. a value of `326` means 326,000 openings). **Cadence:** latest published month as of the pipeline run — BLS publishes this roughly monthly with a lag, so the same figure can repeat across several weekly pipeline runs until BLS's next release. **Null-on-failure:** null if the BLS API call fails or returns an empty series. An optional `bls` key in `keys.json` raises BLS's unauthenticated rate limit but isn't required — the series is public. |
+| `top_employers` | Top 10 employers by listing count this run. **JSON string** — `[{"name":"Baker Hughes","count":56},{"name":"Chevron","count":21},...]`, most listings first, at most 10 entries. **Source:** derived from this run's own rows' `employer` field — populated by the puller (`aijobsboom_puller_v3.py`) from JSearch's `employer_name` field and Adzuna's equivalent (`company.display_name`) as of 9/1/26. Rows from direct-employer feeds or manual entry don't set `employer` (their real employer is already implicit in `company_type` or known by the person entering the row) and are excluded from this count. **This is a derived, aggregate count of employer names already present in each provider's own listing data — never raw listings, titles, URLs, or descriptions** — consistent with this API's [ToS constraint](#tos-constraint). **Cadence:** every pipeline run. **Null-on-failure:** null whenever no row this run has a non-empty `employer` — including, notably, **this column will read null for every pipeline run through 8/31/26** (`employer` capture was added 9/1/26, after that week's `jobs.js` was already pulled); it becomes real starting with the next Sunday pull. Also null if computing it raised an unexpected error. |
+| `wage_floor_by_trade` | Lowest **employer-posted** (non-estimated) wage seen this run, per trade. **JSON string** — `{"electrician":41600,"hvac":38500,"lineman":null,...}` — one key per trade in the same set as the trade-count columns above; a trade with no qualifying row this run gets `null`. **Source:** derived from this run's own scrubbed + merged rows (no external call). Same estimate-exclusion rule as `six_figure_posted`: any row whose `pay` string contains `"(est"` is excluded, since an estimate isn't an employer-posted number. **Cadence:** every pipeline run. **Null-on-failure:** the column itself is only null if computing it raised an unexpected error (defense-in-depth `safe_signal` wrapper) — individual trades with no data just get `null` inside the JSON, not a `0`. |
+| `new_location_velocity` | Count of distinct `loc` (city, state) values in this run's rows that were **not present in the immediately previous pipeline run's rows**. This is a run-over-run diff, deliberately narrower than the report's "new locations ever seen" anomaly check, which unions every prior snapshot. **Source:** derived, comparing this run's rows against the single most recent `archive/jobs/jobs_*.js` snapshot. **Cadence:** every pipeline run. **Null-on-failure:** null on the very first pipeline run ever (no prior snapshot to diff against — an undefined baseline, not a `0`), or if computing it raised an unexpected error. |
+| `fair_chance_pct` | Fair-chance rows (`fairchance: true`) as a percentage of this run's final row count, to one decimal place. **Source:** derived from this run's own rows (`fairchance` count ÷ `rows_final` × 100). **Cadence:** every pipeline run. **Null-on-failure:** null only if computing it raised an unexpected error. |
 
 All trade-count columns exclude any row matching `\b(engineer|engineering)\b`
 — that carve-out keeps "Software Engineer" out of every trade bucket.
+
+**A note on the JSON-string columns** (`wage_floor_by_trade`): its value
+contains commas and double-quotes, so in `stats.csv` it is written as a
+properly quoted CSV field (RFC 4180 style — wrapped in `"..."`, internal
+quotes doubled). A naive `line.split(",")` CSV parser will misparse this
+field and shift every column after it. Consumers of this CSV must use a
+quote-aware CSV parser (or a real CSV library) once this column is present.
 
 ## ToS constraint
 
@@ -128,3 +158,7 @@ what this API sells.
 
 Payment is enforced via [x402](https://x402.org), Coinbase's open HTTP 402
 payment protocol — no accounts, API keys, or subscriptions required.
+
+## Sampling
+
+Aggregator feeds (via JSearch) return overlapping but non-identical samples run-to-run; week-over-week deltas reflect both market movement and sampling variance.

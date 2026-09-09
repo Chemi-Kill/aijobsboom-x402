@@ -9,11 +9,43 @@ import { dirname, join } from "path";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+// RFC-4180-style CSV parser (hand-rolled state machine -- identical to the
+// one in ../worker.js, kept in sync). Some columns (e.g. wage_floor_by_trade,
+// top_employers) are JSON strings, which Python's csv module quotes because
+// they contain commas and double-quotes; a naive line.split(",") would
+// misparse them and shift every column after. Handles quoted fields,
+// embedded commas, doubled-quote escaping ("" -> "), and quoted newlines.
+function parseCsvRows(text) {
+  const rows = [];
+  let row = [];
+  let cur = "";
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') { cur += '"'; i++; }
+        else { inQuotes = false; }
+      } else {
+        cur += ch;
+      }
+      continue;
+    }
+    if (ch === '"') { inQuotes = true; }
+    else if (ch === ",") { row.push(cur); cur = ""; }
+    else if (ch === "\r") { /* skip -- CRLF normalizes on the \n */ }
+    else if (ch === "\n") { row.push(cur); rows.push(row); row = []; cur = ""; }
+    else { cur += ch; }
+  }
+  if (cur !== "" || row.length > 0) { row.push(cur); rows.push(row); }
+  return rows.filter((r) => !(r.length === 1 && r[0] === ""));
+}
+
 function parseCsv(text) {
-  const lines = text.trim().split("\n");
-  const headers = lines[0].split(",");
-  return lines.slice(1).filter(Boolean).map((line) => {
-    const cells = line.split(",");
+  const rows = parseCsvRows(text.trim());
+  if (rows.length === 0) return [];
+  const headers = rows[0];
+  return rows.slice(1).map((cells) => {
     const row = {};
     headers.forEach((h, i) => {
       const raw = cells[i] ?? "";
