@@ -59,6 +59,15 @@ Data updates: after each `pipeline.py` run in the parent repo, copy the fresh
 `teaser.html`, then redeploy. The CSV is bundled into the Worker at build
 time — there's no runtime data fetch.
 
+### Data file is deploy-time local, not in the repo
+
+`data/stats.csv` is gitignored and lives only on the deploy machine. wrangler
+bundles it from local disk at deploy time (the `[[rules]]` Text rule in
+`wrangler.toml`), so `npm run deploy` needs the file present. A fresh clone
+will not build until `data/stats.csv` is copied in from the parent repo's
+`archive/stats.csv`. Everything else needed to build and deploy is in the
+repo plus the `X402_WALLET` secret.
+
 ## Docs
 
 Full column dictionary, scrub-rule writeup, and ToS constraints:
