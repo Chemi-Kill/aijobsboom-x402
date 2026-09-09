@@ -18,14 +18,21 @@ for why.
 
 ## Endpoints
 
-| Endpoint | Price | Network |
+| Endpoint | Price | Networks |
 |---|---|---|
 | `GET /methodology` | free | — |
-| `GET /snapshot` | $0.01 USDC | Solana |
-| `GET /series?weeks=N` | $0.10 USDC | Solana |
+| `GET /health` | free | — |
+| `GET /snapshot` | $0.01 USDC | Solana, Base |
+| `GET /series?weeks=N` | $0.10 USDC | Solana, Base |
 
-Payment is enforced via [x402](https://x402.org) — no accounts, API keys, or
-subscriptions required.
+Payment is enforced via [x402](https://x402.org) (protocol v1) — no accounts,
+API keys, or subscriptions required. Every paid route's 402 response lists
+one `accepts` entry per network; a v1 client such as `x402-fetch` picks the
+one matching its wallet automatically. Solana (the primary rail) settles
+through the PayAI facilitator; Base settles through Coinbase's CDP
+facilitator, which also lists the routes in the x402 Bazaar. `/health` is a
+free freshness probe: the row date `/snapshot` would serve, the board row
+count, and the live payment networks.
 
 ## MCP server
 
@@ -49,10 +56,19 @@ key") — never commit this.
 
 ```bash
 npm install
-wrangler secret put X402_WALLET      # the Solana address that receives USDC
-wrangler secret put FACILITATOR_URL  # optional, overrides the default facilitator
+wrangler secret put X402_WALLET        # the Solana address that receives USDC (primary rail)
+wrangler secret put X402_BASE_WALLET   # the Base address that receives USDC (unset = Solana-only)
+wrangler secret put CDP_API_KEY_ID     # Coinbase CDP facilitator creds for the Base rail
+wrangler secret put CDP_API_KEY_SECRET #   (required for Bazaar discovery; never commit these)
+wrangler secret put FACILITATOR_URL    # optional, overrides the default Solana facilitator
 npm run deploy
 ```
+
+The Base rail is purely additive: with `X402_BASE_WALLET` unset the Worker
+serves Solana-only 402s exactly as before. `pay-test-base.js` makes one real
+Base payment (`PRIVATE_KEY` env var, an EVM key, never logged) and prints
+the settle result; the first Base payment to a route is what lists it in
+the Bazaar.
 
 Data updates: after each `pipeline.py` run in the parent repo, copy the fresh
 `archive/stats.csv` over `data/stats.csv`, run `npm run teaser` to refresh

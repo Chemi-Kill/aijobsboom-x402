@@ -11,10 +11,11 @@
     "mcp": "node mcp-server.js"
   },
   "dependencies": {
-    "hono": "*",
-    "x402-hono": "*",
+    "@coinbase/x402": "^2.1.0",
     "@modelcontextprotocol/sdk": "*",
+    "hono": "*",
     "x402-fetch": "*",
+    "x402-hono": "*",
     "zod": "*"
   },
   "devDependencies": {

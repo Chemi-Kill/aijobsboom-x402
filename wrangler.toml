@@ -2,15 +2,21 @@
 #
 # Setup:
 #   1. npm install
-#   2. wrangler secret put X402_WALLET      # the Solana address that receives USDC
-#   3. (optional) wrangler secret put FACILITATOR_URL   # override the default facilitator
-#   4. npm run deploy
+#   2. wrangler secret put X402_WALLET        # the Solana address that receives USDC (primary rail)
+#   3. wrangler secret put X402_BASE_WALLET   # the Base (EVM) address that receives USDC (additive rail;
+#                                             #   unset = Solana-only 402s exactly as before)
+#   4. wrangler secret put CDP_API_KEY_ID     # Coinbase CDP facilitator creds for the Base rail --
+#      wrangler secret put CDP_API_KEY_SECRET #   required for x402 Bazaar discovery; without them the
+#                                             #   Base rail falls back to the public x402.org facilitator
+#   5. (optional) wrangler secret put FACILITATOR_URL   # override the default Solana (PayAI) facilitator
+#   6. npm run deploy
 #
 # Data updates: after each pipeline.py run, copy the fresh archive/stats.csv
 # over data/stats.csv, run `npm run teaser` to refresh teaser.html, then
 # redeploy. The CSV is bundled into the Worker at build time (see [[rules]]
 # below) — there is no runtime data fetch, so a stale bundle just means a
-# stale /snapshot and /series until the next deploy.
+# stale /snapshot and /series until the next deploy. data/stats.csv is
+# gitignored (deploy-time local); a fresh clone needs it copied in first.
 
 name = "aijobsboom-x402"
 main = "worker.js"
@@ -24,9 +30,15 @@ globs = ["**/*.csv"]
 fallthrough = true
 
 # Non-secret config. Prices are USD strings consumed by x402-hono (e.g. "$0.01").
-# X402_WALLET and FACILITATOR_URL are secrets — set with `wrangler secret put`,
-# never committed here.
+# X402_WALLET, X402_BASE_WALLET, CDP_API_KEY_ID, CDP_API_KEY_SECRET and
+# FACILITATOR_URL are secrets — set with `wrangler secret put`, never
+# committed here. CDP_API_KEY_* are real secrets; the two wallets are public
+# addresses kept out of version control by habit.
 [vars]
 X402_NETWORK = "solana"
 SNAPSHOT_PRICE_USDC = "0.01"
 SERIES_PRICE_USDC = "0.10"
+# Base rail (v1.1.0, additive). Only used when X402_BASE_WALLET is set.
+# BASE_FACILITATOR_URL is the fallback when CDP_API_KEY_* are missing.
+X402_BASE_NETWORK = "base"
+BASE_FACILITATOR_URL = "https://x402.org/facilitator"
