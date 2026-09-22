@@ -23,8 +23,9 @@ import { Hono } from "hono";
 import { paymentMiddleware } from "x402-hono";
 import { createFacilitatorConfig } from "@coinbase/x402";
 import statsCsvText from "./data/stats.csv";
+import { createMonitor } from "./src/monitor.js";
 
-const VERSION = "1.1.0";
+const VERSION = "1.2.0";
 
 const app = new Hono();
 
@@ -127,8 +128,19 @@ long-title trimming, tech/desk role removal, plus two rules added Sep
 "Transformers"/"Multimodal" titles are dropped while electrical
 transformer and substation jobs are preserved; and "N Locations"
 placeholder locations are nulled -- the row and its state region stay,
-but "18 Locations" is not a place and never counts as a new location),
-then HOT-scored, then counted by trade using word-boundary regex
+but "18 Locations" is not a place and never counts as a new location;
+Sep 13: scrub expanded -- desk/sales/intern/retail patterns, mojibake
+repair, loader/PLC exceptions -- and that row was re-processed
+pre-publication;
+Sep 20: trade-token guard -- a title with a core trade token
+(electrician, lineman, welder, pipefitter, mechanic, technician,
+operator, driver, millwright, boilermaker, ironworker, plumber) is not
+removed by the desk or tech rules, except intern/co-op and
+IT-support/help-desk titles -- plus new desk patterns (finance/AP/tax/
+treasury, clinical/behavior/medical assistant, cook/custodian, cyber/
+cloud security, equity research, real estate asset manager,
+communications/content); that row was re-processed pre-publication,
+5,890 -> 5,829), then HOT-scored, then counted by trade using word-boundary regex
 matching. A human reviews the report before any deploy -- the pipeline
 itself never publishes.
 
@@ -136,6 +148,15 @@ SAMPLING
 Aggregator feeds (via JSearch) return overlapping but non-identical
 samples run-to-run; week-over-week deltas reflect both market movement
 and sampling variance.
+
+FEED-HEALTH INDICATOR (agg_share, added Sep 20 2026)
+agg_share = big-five aggregator rows (LinkedIn + ZipRecruiter +
+CareerBuilder + Glassdoor + Monster) / rows_in x 100, per pull. It sat
+at 8-11% on every archived pull except Sep 13 (44.4%, rows_in 9,038);
+on Sep 20 it was back to 8.3% (rows_in 6,651). Neither move was the
+market. Week-over-week deltas are unreliable when agg_share moves more
+than ~10 points -- compare rows with similar agg_share. Null before
+Aug 30 2026 (no archived raw pull). Samples are never patched.
 
 CADENCE
 Rows are appended per pipeline run, not strictly one per calendar week --
@@ -295,6 +316,34 @@ app.get("/health", (c) => {
     networks: paymentRails(c.env).map((r) => r.network),
   });
 });
+
+// ---------------------------------------------------------------------------
+// x402 monitor (v1.2.0). Observes outcomes on the two gated routes -- probe
+// (unpaid 402), fail (payment attached, still 402), settle (X-PAYMENT-RESPONSE
+// present) -- and writes them to the X402_EVENTS KV namespace via waitUntil.
+// It never touches a response. It MUST be registered BEFORE the payment
+// middleware so it wraps it. The routes are named one by one: there is no
+// shared prefix, and a wildcard would also catch /monitor.
+//
+// /monitor and /monitor/api are token-gated (MONITOR_TOKEN secret; a wrong
+// or missing token, or an unset secret, is a plain 404). They are NOT behind
+// the payment middleware and carry no Bazaar discovery metadata.
+//
+// prices: keep in sync with SNAPSHOT_PRICE_USDC / SERIES_PRICE_USDC in
+// wrangler.toml -- the settle header carries no amount, so the monitor takes
+// it from this map. wallets: in THIS Worker X402_WALLET is the Solana address
+// and X402_BASE_WALLET the Base one (offersignal-api is the other way round).
+// ---------------------------------------------------------------------------
+const monitor = createMonitor({
+  name: "aijobsboom-x402",
+  version: VERSION,
+  prices: { "/snapshot": 0.01, "/series": 0.1 },
+  wallets: { solana: (env) => env.X402_WALLET, base: (env) => env.X402_BASE_WALLET },
+  dataAsOf: () => (ROWS.length ? ROWS[ROWS.length - 1].date : null),
+});
+app.use("/snapshot", monitor.observe);
+app.use("/series", monitor.observe);
+monitor.routes(app);
 
 // ---------------------------------------------------------------------------
 // /snapshot -- latest pipeline-run row. Route metadata (description,

@@ -29,6 +29,16 @@ type = "Text"
 globs = ["**/*.csv"]
 fallthrough = true
 
+# x402 monitor (v1.2.0): payment/probe event log + day rollups, written by
+# src/monitor.js via waitUntil. The binding name MUST be X402_EVENTS (the
+# module reads env.X402_EVENTS); the namespace title carries the Worker name so
+# offersignal-api can have its own. Secrets the monitor reads, set with
+# `wrangler secret put`: MONITOR_TOKEN (required -- unset means /monitor is a
+# 404), TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID (optional settle alerts).
+[[kv_namespaces]]
+binding = "X402_EVENTS"
+id = "fcb2d681197748eebfb81f74a7034a92"
+
 # Non-secret config. Prices are USD strings consumed by x402-hono (e.g. "$0.01").
 # X402_WALLET, X402_BASE_WALLET, CDP_API_KEY_ID, CDP_API_KEY_SECRET and
 # FACILITATOR_URL are secrets — set with `wrangler secret put`, never
