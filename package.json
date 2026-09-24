@@ -1,7 +1,7 @@
 {
   "name": "aijobsboom-x402",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.3.0",
   "type": "module",
   "description": "x402-gated data API for aijobsboom.com pipeline stats, plus an MCP server wrapper.",
   "scripts": {

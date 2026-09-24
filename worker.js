@@ -11,7 +11,10 @@
 //
 // Payment rails (v1.1.0): Solana via the PayAI facilitator is PRIMARY and
 // unchanged; Base via Coinbase's CDP facilitator is an additive second rail
-// that also gets the routes indexed in the x402 Bazaar. Both are advertised
+// that also gets the routes indexed in the x402 Bazaar. v1.3.0 (Bazaar
+// listing): buyer-facing route descriptions, Base payTo moved to
+// aijobsboom's own wallet, and this Worker's own CDP key ("aijobsboom-x402",
+// separate from offersignal-api's) switched on as secrets. Both are advertised
 // on every paid route by the multi-rail dispatcher ported from
 // offersignal-api v0.4.0 (see multiRailPayment below).
 //
@@ -25,7 +28,7 @@ import { createFacilitatorConfig } from "@coinbase/x402";
 import statsCsvText from "./data/stats.csv";
 import { createMonitor } from "./src/monitor.js";
 
-const VERSION = "1.2.0";
+const VERSION = "1.3.0";
 
 const app = new Hono();
 
@@ -233,6 +236,21 @@ function paymentHeaderNetwork(header) {
   }
 }
 
+// Log-safe reason for a rail that failed to build its 402 (v1.3.0). viem's
+// invalid-address error quotes the payTo value verbatim, and on 2026-09-23 a
+// secret pasted into the X402_BASE_WALLET slot landed in the Worker logs that
+// way. Report only the value's shape, and blank out any long token-like run
+// in other messages.
+function safeRailError(e, rail) {
+  const msg = String(e?.message || e);
+  if (/Address .* is invalid/.test(msg)) {
+    const v = String(rail.payTo ?? "");
+    const hex40 = /^0x[0-9a-fA-F]{40}$/.test(v);
+    return `invalid payTo (len=${v.length}, ${hex40 ? "0x+40 hex but bad checksum" : "not 0x + 40 hex"}) -- check the wallet secret`;
+  }
+  return msg.replace(/[A-Za-z0-9+/=_-]{40,}/g, (b) => `<redacted len=${b.length}>`).slice(0, 300);
+}
+
 // ---------------------------------------------------------------------------
 // Multi-rail dispatcher (ported from offersignal-api v0.4.0).
 //
@@ -260,6 +278,7 @@ function multiRailPayment(routePath, routeConfigFor) {
   return async (c, next) => {
     const rails = paymentRails(c.env).map((rail) => ({
       network: rail.network,
+      payTo: rail.payTo,
       mw: paymentMiddleware(
         rail.payTo,
         { [routePath]: { ...routeConfigFor(c.env), network: rail.network } },
@@ -293,7 +312,7 @@ function multiRailPayment(routePath, routeConfigFor) {
         if (Array.isArray(body.accepts)) accepts.push(...body.accepts);
         if (rail === rails[0] && body.error) error = body.error;
       } catch (e) {
-        console.error(`x402 ${rail.network} rail failed to build its 402 for ${routePath}: ${e?.message || e}`);
+        console.error(`x402 ${rail.network} rail failed to build its 402 for ${routePath}: ${safeRailError(e, rail)}`);
       }
     }
     if (accepts.length === 0) {
@@ -356,7 +375,7 @@ app.use(
     price: `$${env.SNAPSHOT_PRICE_USDC || "0.01"}`,
     config: {
       description:
-        "Latest pipeline-run rollup from the AIJOBSBOOM skilled-trades job board: rows in/out, scrub-rule removal counts, per-trade counts (electrician, HVAC, lineman, welder, mechanic, CDL), perk-flag counts (fair-chance, will-train, per diem, day-1 benefits, sign-on, travel paid, six-figure, HOT), regional counts, and energy/grid context columns. Derived statistics only -- no job titles, employers, or URLs.",
+        "Weekly US blue-collar job-market snapshot: oilfield, mining, data-center construction; trade counts, wage floors with sample sizes, per-diem/travel/sign-on flags, rig count, EIA prices, grid demand, aggregator share. Updated Sundays.",
       mimeType: "application/json",
       discoverable: true,
       outputSchema: ROW_SCHEMA,
@@ -380,7 +399,7 @@ app.use(
     price: `$${env.SERIES_PRICE_USDC || "0.10"}`,
     config: {
       description:
-        "Last N pipeline-run rollups from the AIJOBSBOOM skilled-trades job board as a chronological (oldest-to-newest) array, same columns as /snapshot. Use for trend and week-over-week analysis. Derived statistics only -- no job titles, employers, or URLs.",
+        "Multi-week US blue-collar job-market series (last N weekly snapshots, oldest to newest, ?weeks=N, default 8): oilfield, mining, data-center construction; trade counts, wage floors with sample sizes, per-diem/travel/sign-on flags, rig count, EIA prices, grid demand, aggregator share. Updated Sundays.",
       mimeType: "application/json",
       discoverable: true,
       inputSchema: {
