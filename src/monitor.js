@@ -23,15 +23,29 @@ const BASE_RPC = 'https://mainnet.base.org';
 const TTL_SETTLE = 90 * 86400;
 const TTL_PROBE = 30 * 86400;
 const BALANCE_CACHE_S = 60;
-// KV write budget (free tier: 1,000 writes/day). Non-settle events ("noise":
-// probes + fails) are rationed per UTC day so a bot hammering a gated route
-// can never starve settle records: below NOISE_ROLLUP_ONLY a probe/fail costs
-// 2 writes (event row + day row); from there to NOISE_STOP it costs 1 (day
-// counter only, no evt: row); at NOISE_STOP and beyond, nothing is written.
-// Worst case 100*2 + 700*1 = 900 writes, leaving 100 for settles, which
-// ALWAYS write both rows.
-const NOISE_ROLLUP_ONLY = 100;
-const NOISE_STOP = 800;
+// KV write budget. The free-plan limit is 1,000 KV writes per UTC day PER
+// CLOUDFLARE ACCOUNT -- shared by every Worker and namespace on it (this
+// module runs in both aijobsboom-x402 and offersignal-api), not per Worker.
+// Once it is spent, every put() throws until 00:00 UTC; on 2026-09-24 that
+// silently dropped a real Base settle. Non-settle events ("noise": probes +
+// fails) are rationed per UTC day so a bot hammering a gated route can never
+// starve settle records: below PROBE_EVENT_CAP a probe/fail costs 2 writes
+// (event row + day row); from there to PROBE_HARD_CAP it costs 1 (day counter
+// only, no evt: row); at PROBE_HARD_CAP and beyond, nothing is written.
+// Worst case 20*2 + 80*1 = 120 writes per Worker per day. Settles ALWAYS
+// write both rows. The /monitor page itself writes nothing to KV (see
+// balance() -- that cache lives in isolate memory).
+const PROBE_EVENT_CAP = 20;
+const PROBE_HARD_CAP = 100;
+
+// Balance cache, in isolate memory (moved out of KV 2026-09-25). The KV
+// version wrote 2 keys per /monitor load, and the page then auto-refreshed
+// every 60 s, so one open tab burned ~2,900 writes/day. The refresh is 300 s
+// since 2026-09-25: each load also costs ~90 KV reads, and at 60 s one open
+// tab would pass the 100k reads/day free limit (also per account). Cache API was the other
+// option, but it is a no-op on *.workers.dev hosts. Per-isolate means a cold
+// isolate refetches from the public RPCs -- harmless, it is 2 reads.
+const balanceCache = new Map(); // net -> { at: ms, out }
 
 export function createMonitor(cfg) {
   const name = cfg.name || 'x402';
@@ -66,8 +80,8 @@ export function createMonitor(cfg) {
     if (evt.type !== 'settle') {
       const cur = await kv.get('day:' + day(evt.ts), 'json');
       const noise = cur ? (cur.probes || 0) + (cur.fails || 0) : 0;
-      if (noise >= NOISE_STOP) return;                 // budget kept for settles
-      if (noise >= NOISE_ROLLUP_ONLY) eventRow = false; // count it, don't log it
+      if (noise >= PROBE_HARD_CAP) return;              // budget kept for settles
+      if (noise >= PROBE_EVENT_CAP) eventRow = false;   // count it, don't log it
     }
     if (eventRow) {
       const key = `evt:${evt.type}:${evt.ts}:${rand()}`;
@@ -131,9 +145,8 @@ export function createMonitor(cfg) {
 
   // ---------- balances ----------
   async function balance(env, net) {
-    const kv = env.X402_EVENTS;
-    const ck = 'cache:balance:' + net;
-    try { const c = kv && (await kv.get(ck, 'json')); if (c) return c; } catch {}
+    const hit = balanceCache.get(net);
+    if (hit && Date.now() - hit.at < BALANCE_CACHE_S * 1000) return hit.out;
     let out = { usdc: null, error: null };
     try {
       const addr = cfg.wallets?.[net]?.(env);
@@ -153,7 +166,7 @@ export function createMonitor(cfg) {
       }
       out.address = addr;
     } catch (e) { out.error = e.message; }
-    try { kv && (await kv.put(ck, JSON.stringify(out), { expirationTtl: BALANCE_CACHE_S })); } catch {}
+    balanceCache.set(net, { at: Date.now(), out });
     return out;
   }
 
@@ -230,7 +243,7 @@ export function createMonitor(cfg) {
     const bal = (n, b) => tile(`${n} USDC balance`, b.usdc == null ? `<span class="err">${esc(b.error || 'n/a')}</span>` : `$${b.usdc.toFixed(2)}<div class="sub">${esc(short(b.address))}</div>`);
     const rows = s.events.map(e => `<tr><td>${esc(e.ts.replace('T', ' ').slice(0, 19))}</td><td class="${e.type}">${e.type}</td><td>${esc(e.route)}</td><td>${esc(e.network || '')}</td><td>${e.amount_usdc != null ? '$' + e.amount_usdc : ''}</td><td>${esc(short(e.payer))}</td><td>${txLink(e)}</td><td class="sub">${esc(e.error || e.ua || '')}</td></tr>`).join('');
     const kv = (o) => Object.entries(o).map(([k, v]) => `<tr><td>${esc(k)}</td><td>${v}</td></tr>`).join('') || '<tr><td colspan=2 class="sub">none</td></tr>';
-    return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="60"><meta name="robots" content="noindex">
+    return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="300"><meta name="robots" content="noindex">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(s.worker)} monitor</title>
 <style>body{font:14px/1.4 system-ui,sans-serif;margin:0;padding:16px;background:#0f172a;color:#e2e8f0}h1{font-size:18px;margin:0 0 4px}.sub{color:#94a3b8;font-size:12px}
 .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:16px 0}.tile{background:#1e293b;border-radius:8px;padding:12px}.k{color:#94a3b8;font-size:12px}.v{font-size:22px;font-weight:600}
