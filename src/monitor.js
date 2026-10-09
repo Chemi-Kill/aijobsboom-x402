@@ -13,13 +13,30 @@
 // Bindings required: KV namespace X402_EVENTS. Secrets: MONITOR_TOKEN (required),
 // TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID (optional).
 // Invariant: nothing in here can change a paid response. Every write is try/catch + waitUntil.
+//
+// Owner email (2026-10-08, MONITOR_BUILD below). Uses Cloudflare's send_email binding
+// (Email Routing on aijobsboom.com), no third-party mail service:
+//   - binding SEND_EMAIL ([[send_email]] in wrangler.toml)
+//   - var NOTIFY_TO: a VERIFIED Email Routing destination address. Kept out of the repo:
+//     set at deploy with `wrangler deploy --var NOTIFY_TO:<addr>`; keep_vars = true keeps it.
+//   - cfg.notify: { from, fromName, sale: 'x402 sale', week: 'x402 week' }
+// (1) every settle -> one plain-text email, sent after the KV rows are written (or failed);
+//     a send failure is logged, never thrown. (2) export scheduled() -> Monday digest.
+// Unset SEND_EMAIL / NOTIFY_TO = no email, everything else unchanged.
+import { EmailMessage } from 'cloudflare:email';
+
+const MONITOR_BUILD = '2026-10-08 (email alerts + digest)';
+const REPEAT_AFTER = 5;     // a payer with more than this many settles (all time) is a "repeat buyer"
 
 // Fixed 9/21/26: the downloaded constant was garbled (47 chars). This is the
 // mint the Worker's own 402 advertises as `asset` and what x402 1.2.0 ships.
 const USDC_SOL_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 const USDC_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
-const SOL_RPC = 'https://api.mainnet-beta.solana.com';
-const BASE_RPC = 'https://mainnet.base.org';
+// Tried in order. A failed lookup (HTTP error, JSON-RPC error, missing result) is an
+// explicit error on the tile, never $0.00 (until 2026-10-08 a failed Solana lookup
+// summed an empty list and showed $0.00 while the wallet held $0.31).
+const SOL_RPCS = ['https://api.mainnet-beta.solana.com', 'https://solana-rpc.publicnode.com'];
+const BASE_RPCS = ['https://mainnet.base.org', 'https://base-rpc.publicnode.com'];
 const TTL_SETTLE = 90 * 86400;
 const TTL_PROBE = 30 * 86400;
 const BALANCE_CACHE_S = 60;
@@ -95,6 +112,133 @@ export function createMonitor(cfg) {
       } else if (evt.type === 'probe') d.probes++;
       else if (evt.type === 'fail') d.fails++;
     });
+    if (evt.type === 'settle') return bumpMonth(kv, evt);
+  }
+
+  // month:YYYY-MM = { settles, usdc, payers: {addr: n this month}, payers_all: {addr: n all time} }.
+  // 1 read + 1 write per settle; the first settle of a month also reads the previous
+  // month once to carry payers_all forward. Settles only, so it never touches the noise budget.
+  async function bumpMonth(kv, evt) {
+    const mk = evt.ts.slice(0, 7);
+    let cur = await kv.get('month:' + mk, 'json');
+    if (!cur) {
+      const [y, m] = mk.split('-').map(Number);
+      const pk = m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`;
+      const prev = await kv.get('month:' + pk, 'json');
+      cur = { settles: 0, usdc: 0, payers: {}, payers_all: { ...(prev?.payers_all || {}) } };
+    }
+    const p = evt.payer || 'unknown';
+    cur.settles++; cur.usdc = r6(cur.usdc + (evt.amount_usdc || 0));
+    cur.payers[p] = (cur.payers[p] || 0) + 1;
+    cur.payers_all[p] = (cur.payers_all[p] || 0) + 1;
+    await kv.put('month:' + mk, JSON.stringify(cur)); // permanent
+    return cur;
+  }
+
+  // ---------- email ----------
+  const fmtUsd = (n) => '$' + (Number(n) || 0).toFixed(Number(n) && Number(n) < 0.01 ? 6 : 2);
+  const central = (iso) => new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', weekday: 'short',
+    year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit',
+    timeZoneName: 'short' }).format(new Date(iso));
+  const explorer = (net, tx) => !tx ? '' : net === 'solana' ? `https://solscan.io/tx/${tx}` : `https://basescan.org/tx/${tx}`;
+
+  // Plain-text RFC 5322 message. Subject is kept ASCII; body is UTF-8.
+  function mime(from, fromName, to, subject, body) {
+    const id = `<${Date.now()}.${rand()}@${from.split('@')[1]}>`;
+    return [
+      `From: "${fromName}" <${from}>`, `To: ${to}`, `Subject: ${subject.replace(/[^\x20-\x7e]/g, '?')}`,
+      `Date: ${new Date().toUTCString().replace('GMT', '+0000')}`, `Message-ID: ${id}`, 'MIME-Version: 1.0',
+      'Content-Type: text/plain; charset=utf-8', 'Content-Transfer-Encoding: 8bit', '', body.replace(/\r?\n/g, '\r\n'), '',
+    ].join('\r\n');
+  }
+
+  async function sendMail(env, subject, body) {
+    const n = cfg.notify || {};
+    if (!env.SEND_EMAIL || !env.NOTIFY_TO || !n.from) { console.log('email skipped: SEND_EMAIL, NOTIFY_TO or cfg.notify.from missing'); return false; }
+    await env.SEND_EMAIL.send(new EmailMessage(n.from, env.NOTIFY_TO, mime(n.from, n.fromName || name, env.NOTIFY_TO, subject, body)));
+    return true;
+  }
+
+  function saleEmail(evt, month) {
+    const n = cfg.notify || {};
+    const p = evt.payer || 'unknown';
+    const all = month?.payers_all?.[p] ?? null;
+    const repeat = all != null && all > REPEAT_AFTER;
+    const subject = `${n.sale || 'x402 sale'}: ${evt.amount_usdc != null ? fmtUsd(evt.amount_usdc) : '$?'} ${evt.route} ${evt.network}`
+      + (repeat ? ' (repeat buyer)' : '') + (evt.status === 'settle_failed' ? ' [settle reported failure]' : '');
+    const lines = [
+      `${name} v${cfg.version || '?'}: a payment settled.`, '',
+      `Time (UTC):      ${evt.ts.replace('T', ' ').slice(0, 19)}`,
+      `Time (Central):  ${central(evt.ts)}`,
+      `Route:           ${evt.route}`,
+      `Rail:            ${evt.network}`,
+      `Amount:          ${evt.amount_usdc != null ? fmtUsd(evt.amount_usdc) + ' USDC' : 'unknown (route not in price map)'}`,
+      `Payer:           ${p}`,
+      `Tx:              ${evt.tx || 'none in settle header'}`,
+      evt.tx ? `Explorer:        ${explorer(evt.network, evt.tx)}` : null,
+      '',
+      month ? `Settles this month (UTC): ${month.settles}, ${fmtUsd(month.usdc)}`
+            : 'Settles this month: unavailable (the KV write failed; this sale is NOT in KV, check the chain)',
+      month ? `This payer: ${month.payers[p]} this month, ${all} all time${repeat ? ` (repeat buyer: more than ${REPEAT_AFTER})` : ''}` : null,
+    ].filter((l) => l !== null);
+    return { subject, body: lines.join('\n') + '\n' };
+  }
+
+  // ---------- weekly digest ----------
+  // Weeks are Monday 00:00 to Sunday 24:00 UTC. "This week" is the last complete one before
+  // `now`, "previous week" the one before it. Reads: 14 day: rows, one list of evt:settle:
+  // keys, and one get per settle event in those 14 days (payer detail lives only there).
+  async function digest(env, now = new Date()) {
+    const kv = env.X402_EVENTS;
+    const DAY = 86400000;
+    const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+    const end = today - ((new Date(today).getUTCDay() + 6) % 7) * DAY; // this Monday 00:00 UTC
+    const start = end - 14 * DAY;
+    const dates = Array.from({ length: 14 }, (_, i) => new Date(start + i * DAY).toISOString().slice(0, 10));
+    const rows = kv ? await Promise.all(dates.map((d) => kv.get('day:' + d, 'json'))) : dates.map(() => null);
+    let evts = [];
+    if (kv) {
+      let cursor, keys = [];
+      do { const l = await kv.list({ prefix: 'evt:settle:', cursor }); keys.push(...l.keys.map((k) => k.name)); cursor = l.list_complete ? null : l.cursor; } while (cursor);
+      const ts = (k) => k.slice('evt:settle:'.length, k.lastIndexOf(':'));
+      keys = keys.filter((k) => { const t = Date.parse(ts(k)); return t >= start && t < end; });
+      evts = (await Promise.all(keys.map((k) => kv.get(k, 'json')))).filter(Boolean);
+    }
+    const week = (from) => {
+      const r = { from: dates[from], to: dates[from + 6], settles: 0, usdc: 0, rails: {}, payers: {}, n402: 0, capped: 0, payer_rows: 0 };
+      for (let i = from; i < from + 7; i++) {
+        const d = rows[i]; if (!d) continue;
+        r.settles += d.settles || 0; r.usdc += d.usdc || 0;
+        for (const [k, v] of Object.entries(d.by_network || {})) r.rails[k] = (r.rails[k] || 0) + v;
+        const noise = (d.probes || 0) + (d.fails || 0);
+        r.n402 += noise; if (noise >= PROBE_HARD_CAP) r.capped++;
+      }
+      const lo = start + from * DAY, hi = lo + 7 * DAY;
+      for (const e of evts) { const t = Date.parse(e.ts); if (t >= lo && t < hi) { r.payers[short(e.payer || 'unknown')] = (r.payers[short(e.payer || 'unknown')] || 0) + 1; r.payer_rows++; } }
+      r.usdc = r6(r.usdc);
+      return r;
+    };
+    const cur = week(7), prev = week(0);
+    const list = (o) => Object.entries(o).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(', ') || 'none';
+    const block = (label, w) => [
+      `${label}: Mon ${w.from} to Sun ${w.to} (UTC)`,
+      `  Sales:        ${w.settles}, ${fmtUsd(w.usdc)} USDC`,
+      `  By rail:      ${list(w.rails)}`,
+      `  By payer:     ${list(w.payers)}${w.payer_rows !== w.settles ? `  (payer known for ${w.payer_rows} of ${w.settles}; the rest have no event row)` : ''}`,
+      `  402s served:  at least ${w.n402} (a minimum: counting stops at ${PROBE_HARD_CAP} a day; ${w.capped} of 7 days hit that cap)`,
+    ].join('\n');
+    const n = cfg.notify || {};
+    const subject = `${n.week || 'x402 week'}: ${cur.settles} sales, ${fmtUsd(cur.usdc)}`;
+    const body = `${name} v${cfg.version || '?'} weekly digest\n\n${block('This week', cur)}\n\n${block('Previous week', prev)}\n`;
+    return { subject, body, cur, prev };
+  }
+
+  async function scheduled(event, env, ctx) {
+    const job = (async () => {
+      try { const d = await digest(env, new Date(event.scheduledTime || Date.now())); await sendMail(env, d.subject, d.body); }
+      catch (e) { console.log('digest failed', e && e.message); }
+    })();
+    try { ctx.waitUntil(job); } catch { await job; }
   }
 
   async function telegram(env, evt) {
@@ -108,8 +252,13 @@ export function createMonitor(cfg) {
 
   function record(c, evt, ttl) {
     const job = (async () => {
-      try { await write(c.env, evt, ttl); } catch (e) { console.log('monitor write failed', e && e.message); }
-      if (evt.type === 'settle') { try { await telegram(c.env, evt); } catch (e) { console.log('telegram failed', e && e.message); } }
+      let month = null;
+      try { month = await write(c.env, evt, ttl); } catch (e) { console.log('monitor write failed', e && e.message); }
+      if (evt.type === 'settle') {
+        // Sent whether or not the KV write worked: if KV is out of budget, this email is the only record.
+        try { const m = saleEmail(evt, month || null); await sendMail(c.env, m.subject, m.body); } catch (e) { console.log('sale email failed', e && e.message); }
+        try { await telegram(c.env, evt); } catch (e) { console.log('telegram failed', e && e.message); }
+      }
     })();
     try { c.executionCtx.waitUntil(job); } catch { /* no ctx (tests) — let it float */ }
   }
@@ -144,6 +293,25 @@ export function createMonitor(cfg) {
   }
 
   // ---------- balances ----------
+  // First RPC that answers with a JSON-RPC result wins; an HTTP error, a JSON-RPC error
+  // object or an unparseable body moves on to the next. All failing throws, with each reason.
+  async function rpcFirst(urls, method, params) {
+    const errs = [];
+    for (const url of urls) {
+      const host = new URL(url).host;
+      try {
+        const r = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) });
+        if (!r.ok) { errs.push(`${host} HTTP ${r.status}`); continue; }
+        const j = await r.json();
+        if (j.error) { errs.push(`${host} ${j.error.code ?? ''} ${String(j.error.message || '').slice(0, 80)}`.trim()); continue; }
+        if (!('result' in j)) { errs.push(`${host} no result`); continue; }
+        return { result: j.result, host };
+      } catch (e) { errs.push(`${host} ${e.message}`); }
+    }
+    throw new Error('balance lookup failed: ' + errs.join('; '));
+  }
+
   async function balance(env, net) {
     const hit = balanceCache.get(net);
     if (hit && Date.now() - hit.at < BALANCE_CACHE_S * 1000) return hit.out;
@@ -151,21 +319,20 @@ export function createMonitor(cfg) {
     try {
       const addr = cfg.wallets?.[net]?.(env);
       if (!addr) throw new Error('no wallet configured');
+      out.address = addr;
       if (net === 'solana') {
-        const r = await fetch(SOL_RPC, { method: 'POST', headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'getTokenAccountsByOwner',
-            params: [addr, { mint: USDC_SOL_MINT }, { encoding: 'jsonParsed' }] }) });
-        const j = await r.json();
-        out.usdc = (j.result?.value || []).reduce((s, a) => s + (a.account.data.parsed.info.tokenAmount.uiAmount || 0), 0);
+        const res = await rpcFirst(SOL_RPCS, 'getTokenAccountsByOwner', [addr, { mint: USDC_SOL_MINT }, { encoding: 'jsonParsed' }]);
+        if (!Array.isArray(res.result?.value)) throw new Error(`${res.host}: no token-account list in reply`);
+        out.usdc = res.result.value.reduce((s, a) => s + Number(a.account.data.parsed.info.tokenAmount.uiAmountString ?? a.account.data.parsed.info.tokenAmount.uiAmount ?? 0), 0);
+        out.rpc = res.host;
       } else {
         const data = '0x70a08231' + addr.toLowerCase().replace('0x', '').padStart(64, '0');
-        const r = await fetch(BASE_RPC, { method: 'POST', headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_call', params: [{ to: USDC_BASE, data }, 'latest'] }) });
-        const j = await r.json();
-        out.usdc = Number(BigInt(j.result || '0x0')) / 1e6;
+        const res = await rpcFirst(BASE_RPCS, 'eth_call', [{ to: USDC_BASE, data }, 'latest']);
+        if (typeof res.result !== 'string' || !/^0x[0-9a-f]*$/i.test(res.result)) throw new Error(`${res.host}: no balance in reply`);
+        out.usdc = Number(BigInt(res.result === '0x' ? '0x0' : res.result)) / 1e6;
+        out.rpc = res.host;
       }
-      out.address = addr;
-    } catch (e) { out.error = e.message; }
+    } catch (e) { out.usdc = null; out.error = e.message; console.log('balance lookup failed', net, e.message); }
     balanceCache.set(net, { at: Date.now(), out });
     return out;
   }
@@ -249,7 +416,7 @@ export function createMonitor(cfg) {
 .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:16px 0}.tile{background:#1e293b;border-radius:8px;padding:12px}.k{color:#94a3b8;font-size:12px}.v{font-size:22px;font-weight:600}
 table{width:100%;border-collapse:collapse;margin:8px 0 20px}td,th{padding:6px 8px;border-bottom:1px solid #334155;text-align:left;font-size:13px}th{color:#94a3b8;font-weight:500}
 .settle{color:#4ade80}.probe{color:#94a3b8}.fail{color:#f87171}.err{color:#f87171;font-size:12px}a{color:#7dd3fc}h2{font-size:14px;color:#94a3b8;margin:20px 0 6px}.two{display:grid;grid-template-columns:1fr 1fr;gap:16px}@media(max-width:600px){.two{grid-template-columns:1fr}}</style></head><body>
-<h1>${esc(s.worker)} <span class="sub">v${esc(s.version)} · data ${esc(s.data_as_of)} · ${esc(s.generated.slice(0, 16).replace('T', ' '))} UTC</span></h1>
+<h1>${esc(s.worker)} <span class="sub">v${esc(s.version)} · monitor ${esc(MONITOR_BUILD)} · data ${esc(s.data_as_of)} · ${esc(s.generated.slice(0, 16).replace('T', ' '))} UTC</span></h1>
 <div class="tiles">${tile('24h', `${s.tiles.h24.settles} <span class="sub">$${s.tiles.h24.usdc}</span>`)}${tile('7d', `${s.tiles.d7.settles} <span class="sub">$${s.tiles.d7.usdc}</span>`)}${tile('30d', `${s.tiles.d30.settles} <span class="sub">$${s.tiles.d30.usdc}</span>`)}${tile('All time', `${s.tiles.all.settles} <span class="sub">$${s.tiles.all.usdc}</span>`)}${tile('30d probes / fails', `${s.tiles.d30.probes} / ${s.tiles.d30.fails}`)}</div>
 <div class="tiles">${bal('Solana', s.balances.solana)}${bal('Base', s.balances.base)}${tile('Recorded 30d USDC', `$${s.tiles.d30.usdc}<div class="sub">compare to balances → unlogged payments</div>`)}</div>
 <h2>30 days · green settles, grey probes</h2>${chart(s.days)}
@@ -277,7 +444,27 @@ table{width:100%;border-collapse:collapse;margin:8px 0 20px}td,th{padding:6px 8p
       if (!(await guard(c))) return c.notFound();
       return c.json(await snapshot(c.env), 200, hdr);
     });
+    // Manual trigger, same token. POST only (a reload or a link preview must not send mail).
+    //   what=digest  -> build and send the Monday digest now (same code as the cron)
+    //   what=sample  -> send one sale email built from fake values, marked TEST; no KV access
+    //   dry=1        -> return the subject and body instead of sending
+    app.post('/monitor/notify', async (c) => {
+      if (!(await guard(c))) return c.notFound();
+      const what = c.req.query('what');
+      let m;
+      if (what === 'digest') m = await digest(c.env);
+      else if (what === 'sample') {
+        const ts = new Date().toISOString();
+        m = saleEmail({ type: 'settle', ts, route: Object.keys(prices)[0] || '/', network: 'solana', payer: 'TEST-payer-not-a-real-sale',
+          tx: null, amount_usdc: Object.values(prices)[0] ?? 0.01, status: 'settled' },
+          { settles: 0, usdc: 0, payers: { 'TEST-payer-not-a-real-sale': 1 }, payers_all: { 'TEST-payer-not-a-real-sale': 1 } });
+        m.subject = '[TEST] ' + m.subject; m.body = 'TEST EMAIL: no payment happened. Checking the send path only.\n\n' + m.body;
+      } else return c.json({ error: 'what must be digest or sample' }, 400, hdr);
+      if (c.req.query('dry') === '1') return c.json({ subject: m.subject, body: m.body }, 200, hdr);
+      try { const sent = await sendMail(c.env, m.subject, m.body); return c.json({ sent, subject: m.subject }, 200, hdr); }
+      catch (e) { console.log('notify send failed', e && e.message); return c.json({ sent: false, error: String(e && e.message) }, 502, hdr); }
+    });
   }
 
-  return { observe, routes, snapshot, _write: write };
+  return { observe, routes, snapshot, scheduled, digest, _write: write, _saleEmail: saleEmail, _mime: mime };
 }

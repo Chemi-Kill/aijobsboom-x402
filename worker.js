@@ -28,7 +28,7 @@ import { createFacilitatorConfig } from "@coinbase/x402";
 import statsCsvText from "./data/stats.csv";
 import { createMonitor } from "./src/monitor.js";
 
-const VERSION = "1.3.0";
+const VERSION = "1.4.0";
 
 const app = new Hono();
 
@@ -86,11 +86,42 @@ function parseCsv(text) {
   return { headers, rows: parsed };
 }
 
-const { headers: COLUMNS, rows: ROWS } = parseCsv(statsCsvText);
+// Columns in stats.csv that are NOT part of the API (9/27/26, Pepper's
+// rolling-board ruling): board_rows_rolling counts the SITE's 14-day rolling
+// board, not the pull, and the API stays strictly per-pull. Dropping it here
+// also keeps ROW_SCHEMA -- and so both 402 bodies and the Bazaar listing --
+// byte-identical.
+const API_EXCLUDED_COLUMNS = new Set(["board_rows_rolling"]);
+const PARSED = parseCsv(statsCsvText);
+const COLUMNS = PARSED.headers.filter((h) => !API_EXCLUDED_COLUMNS.has(h));
+// 10/4/26 (CLAUDE.md rule 3): a served row is never rewritten; a correction
+// is APPENDED as a new row for the same date with corrected_from set. The
+// API hides ONLY the row a correction supersedes (the nearest earlier row of
+// that date without corrected_from), so /snapshot and /series return the
+// correction and the original stays in stats.csv. Same-date rows WITHOUT a
+// correction (the Aug 16/19/20 development runs) are served as always.
+const SUPERSEDED = new Set();
+PARSED.rows.forEach((r, i) => {
+  if (r.corrected_from == null) return;
+  for (let j = i - 1; j >= 0; j--) {
+    const o = PARSED.rows[j];
+    if (o.date === r.date && o.corrected_from == null && !SUPERSEDED.has(j)) { SUPERSEDED.add(j); break; }
+  }
+});
+const ROWS = PARSED.rows
+  .filter((r, i) => !SUPERSEDED.has(i))
+  .map((r) => Object.fromEntries(Object.entries(r).filter(([k]) => !API_EXCLUDED_COLUMNS.has(k))));
+
+// Columns served in every row but NOT advertised in ROW_SCHEMA (10/4/26):
+// the outputSchema is embedded in both 402 bodies and the Bazaar listing,
+// which must stay byte-identical. The schema sets no additionalProperties,
+// so rows carrying these fields still validate. Documented in /methodology.
+const SCHEMA_UNADVERTISED_COLUMNS = new Set(["wage_median_by_trade", "corrected_from"]);
 
 // Columns whose cells are JSON-encoded strings (quoted in the CSV), not
 // numbers. Everything else besides `date` is numeric or null.
-const JSON_STRING_COLUMNS = new Set(["top_employers", "wage_floor_by_trade", "new_location_velocity"]);
+const JSON_STRING_COLUMNS = new Set(["top_employers", "wage_floor_by_trade", "new_location_velocity",
+  "wage_median_by_trade"]);
 
 // JSON schema for one stats row, built from the bundled CSV header so it
 // tracks new pipeline columns automatically. This is what the x402 Bazaar
@@ -98,7 +129,7 @@ const JSON_STRING_COLUMNS = new Set(["top_employers", "wage_floor_by_trade", "ne
 const ROW_SCHEMA = {
   type: "object",
   properties: Object.fromEntries(
-    COLUMNS.map((col) => {
+    COLUMNS.filter((col) => !SCHEMA_UNADVERTISED_COLUMNS.has(col)).map((col) => {
       if (col === "date") return [col, { type: "string", description: "Pipeline-run date, YYYY-MM-DD" }];
       if (JSON_STRING_COLUMNS.has(col)) return [col, { type: ["string", "null"], description: "JSON-encoded string" }];
       return [col, { type: ["number", "null"] }];
@@ -107,6 +138,8 @@ const ROW_SCHEMA = {
 };
 
 const METHODOLOGY_TEXT = `AIJOBSBOOM DATA API — METHODOLOGY
+
+Publishing weekly since July 30, 2026.
 
 WHAT THIS IS
 Rollup statistics from the aijobsboom.com skilled-trades job board pipeline:
@@ -118,6 +151,25 @@ travel paid, employer-posted six-figure, HOT count, North Dakota count,
 Montana count). No job titles, employers, URLs, or descriptions are
 included in this data. See /methodology for the full writeup or
 methodology.md in this repo for the column-by-column dictionary.
+Oct 4, 2026: rows flagged percentage pay (e.g. percentage-of-load water
+haulers quoting average monthly earnings) never count as employer-posted
+six-figure and never feed the wage floors.
+Oct 4, 2026: entry-tier titles (helper, apprentice, trainee, intern,
+entry-level, or a title ending in " I") no longer set wage floors; they
+still count in the trade counts. New column wage_median_by_trade (JSON
+string, {"trade":{"median":N,"n":N}}, median null when n < 5): the median
+employer-posted annualized wage, same sample as the floor.
+Oct 4, 2026: CORRECTIONS. A row already served is never rewritten. A
+correction is appended as a new row for the same date with corrected_from
+describing what it supersedes; the API serves the correction in place of
+the row it supersedes. The
+2026-10-04 row was served, then corrected the same evening (electrician
+floor $56,160 n=63 -> $57,200 n=61; medians added); the original row is
+kept in stats.csv.
+Oct 4, 2026: STANDING STEP. Every Sunday, queries that failed on the first
+pull (JSearch after its retries; every Adzuna HTTP error, which the puller
+does not retry) are re-run against the same feed before the row is
+processed. A query that fails again is named as a feed note.
 
 HOW IT'S COLLECTED
 Jobs are pulled from JSearch (RapidAPI) and Adzuna, then run through an
@@ -143,7 +195,15 @@ IT-support/help-desk titles -- plus new desk patterns (finance/AP/tax/
 treasury, clinical/behavior/medical assistant, cook/custodian, cyber/
 cloud security, equity research, real estate asset manager,
 communications/content); that row was re-processed pre-publication,
-5,890 -> 5,829), then HOT-scored, then counted by trade using word-boundary regex
+5,890 -> 5,829;
+Sep 27: new patterns -- executive officers, IT-abbreviation titles (field
+IT technicians kept), networking/cloud-platform, trade compliance/KYC,
+account reps/customer service/retail, FP&A/benefits/insurance/admin
+assistants, data science/ERP, community affairs, title agents and land
+acquisition (landman kept), property managers, teaching and PRN clinical
+postings; power/gas/battery-storage systems engineers kept; that row was
+re-processed pre-publication, 5,749 -> 5,655, then once more for a
+mixed double-encoded title -- mojibake repair 0 -> 1, nothing else moved), then HOT-scored, then counted by trade using word-boundary regex
 matching. A human reviews the report before any deploy -- the pipeline
 itself never publishes.
 
@@ -160,6 +220,14 @@ on Sep 20 it was back to 8.3% (rows_in 6,651). Neither move was the
 market. Week-over-week deltas are unreliable when agg_share moves more
 than ~10 points -- compare rows with similar agg_share. Null before
 Aug 30 2026 (no archived raw pull). Samples are never patched.
+
+SITE BOARD VS. THIS DATA (added Sep 27 2026)
+From the Sep 27 run the public job board on aijobsboom.com is a 14-day
+rolling union of pulls (deduplicated by listing, carried-over listings
+re-checked against current scrub rules). This API does not change:
+rows_final and every other column still count this run's pull only, so
+no row changes meaning. The site's own count (board_rows_rolling) is kept
+in the pipeline's records but is not part of this API.
 
 CADENCE
 Rows are appended per pipeline run, not strictly one per calendar week --
@@ -337,7 +405,7 @@ app.get("/health", (c) => {
 });
 
 // ---------------------------------------------------------------------------
-// x402 monitor (v1.2.0). Observes outcomes on the two gated routes -- probe
+// x402 monitor (v1.2.0; owner email alerts + Monday digest since v1.4.0). Observes outcomes on the two gated routes -- probe
 // (unpaid 402), fail (payment attached, still 402), settle (X-PAYMENT-RESPONSE
 // present) -- and writes them to the X402_EVENTS KV namespace via waitUntil.
 // It never touches a response. It MUST be registered BEFORE the payment
@@ -359,6 +427,9 @@ const monitor = createMonitor({
   prices: { "/snapshot": 0.01, "/series": 0.1 },
   wallets: { solana: (env) => env.X402_WALLET, base: (env) => env.X402_BASE_WALLET },
   dataAsOf: () => (ROWS.length ? ROWS[ROWS.length - 1].date : null),
+  // v1.4.0: one email per settle + Monday 13:00 UTC digest, via the SEND_EMAIL binding to
+  // the NOTIFY_TO var (set at deploy, kept by keep_vars; see src/monitor.js header).
+  notify: { from: "x402@aijobsboom.com", fromName: "aijobsboom x402", sale: "x402 sale", week: "x402 week" },
 });
 app.use("/snapshot", monitor.observe);
 app.use("/series", monitor.observe);
@@ -417,4 +488,8 @@ app.get("/series", (c) => {
   return c.json(ROWS.slice(ROWS.length - n));
 });
 
-export default app;
+// fetch = the Hono app; scheduled = the Monday digest (cron in wrangler.toml).
+export default {
+  fetch: app.fetch,
+  scheduled: (event, env, ctx) => monitor.scheduled(event, env, ctx),
+};

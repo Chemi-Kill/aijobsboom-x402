@@ -22,6 +22,10 @@ name = "aijobsboom-x402"
 main = "worker.js"
 compatibility_date = "2026-08-01"
 compatibility_flags = ["nodejs_compat"]
+# v1.4.0: keep_vars keeps NOTIFY_TO (the owner-alert destination, a verified Email
+# Routing address) across deploys. It is deliberately NOT in this file -- the repo is
+# public. Set or change it with: npx wrangler deploy --var NOTIFY_TO:<address>
+keep_vars = true
 
 # Bundle data/stats.csv as an importable text string (`import csv from "./data/stats.csv"`).
 [[rules]]
@@ -52,3 +56,14 @@ SERIES_PRICE_USDC = "0.10"
 # BASE_FACILITATOR_URL is the fallback when CDP_API_KEY_* are missing.
 X402_BASE_NETWORK = "base"
 BASE_FACILITATOR_URL = "https://x402.org/facilitator"
+
+# Owner email (v1.4.0, src/monitor.js): one email per settle + the Monday digest.
+# Cloudflare Email Routing on aijobsboom.com, no third-party mail service, no secret.
+# No destination_address here (see keep_vars above): Cloudflare only delivers to
+# verified Email Routing destination addresses anyway.
+[[send_email]]
+name = "SEND_EMAIL"
+
+# Monday digest, 13:00 UTC = 8 am Central in daylight time, 7 am in standard time.
+[triggers]
+crons = ["0 13 * * 1"]
