@@ -170,6 +170,16 @@ Oct 4, 2026: STANDING STEP. Every Sunday, queries that failed on the first
 pull (JSearch after its retries; every Adzuna HTTP error, which the puller
 does not retry) are re-run against the same feed before the row is
 processed. A query that fails again is named as a feed note.
+Oct 5, 2026 (first applied Oct 11): mining rows filed only because the
+town carries a mining company's name (Coeur d'Alene ID, Creve Coeur MO)
+are removed unless the employer or title is mining; a "$0k-0k/yr (est)"
+pay display is replaced with "See listing" (row kept). Counted in the
+run report, not as new columns -- the schema is unchanged.
+Oct 11, 2026: full-stack, DevSecOps and UI-engineer titles removed;
+Workday placeholder locations ("DNU-", "DO NOT USE", "-MX-") dropped
+as foreign; titles naming three or more trades stay in the counts but
+never set a wage floor or median. The Oct 11 row was re-processed
+before publication (rows_final 5,898 -> 5,893).
 
 HOW IT'S COLLECTED
 Jobs are pulled from JSearch (RapidAPI) and Adzuna, then run through an
