@@ -109,6 +109,29 @@ const flagChips = flags.map(([label, val]) =>
   `        <div class="chip"><b>${n(val)}</b> ${label}</div>`
 ).join("\n");
 
+// Phase 1.5b (10/6/26): the page carries a full Spanish sibling block
+// (<main data-lang="es" hidden>) filled from the SAME row; the site's
+// i18n-page.js shows the block for the reader's EN|ES choice. Numbers, prices,
+// endpoints and URLs are identical in both blocks.
+const TRADE_ES = { Electrician: "Electricista", HVAC: "HVAC", Lineman: "Liniero", Welder: "Soldador",
+  Mechanic: "Mecánico", CDL: "CDL" };
+const FLAG_ES = { "HOT picks": "Selecciones HOT", "Fair-chance": "Segunda oportunidad", "Will-train": "Te capacitan",
+  "Per diem": "Viáticos", "Day-1 benefits": "Beneficios desde el día 1", "Sign-on bonus": "Bono de contratación",
+  "Travel paid": "Viaje pagado", "Employer six-figure": "Seis cifras del empleador",
+  "North Dakota": "North Dakota", "Montana": "Montana" };
+const MONTHS_ES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto",
+  "septiembre", "octubre", "noviembre", "diciembre"];
+function fmtDateEs(d) {
+  const dt = new Date(`${d}T00:00:00Z`);
+  return `${dt.getUTCDate()} de ${MONTHS_ES[dt.getUTCMonth()]} de ${dt.getUTCFullYear()}`;
+}
+const tradeRowsEs = trades.map(([label, val]) =>
+  `        <div class="stat"><span class="num">${n(val)}</span><span class="label">${TRADE_ES[label]}</span></div>`
+).join("\n");
+const flagChipsEs = flags.map(([label, val]) =>
+  `        <div class="chip"><b>${n(val)}</b> ${FLAG_ES[label]}</div>`
+).join("\n");
+
 const html = `<!doctype html>
 <html lang="en">
 <head>
@@ -116,6 +139,7 @@ const html = `<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <meta name="color-scheme" content="dark" />
 <title>AIJOBSBOOM — Weekly Trade Board Snapshot</title>
+<link rel="canonical" href="https://aijobsboom.com/teaser.html" />
 <meta name="description" content="Free weekly snapshot of the AIJOBSBOOM skilled-trades job board: trade counts, perk flags, and HOT picks. Full historical data available via the x402 API." />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -160,18 +184,38 @@ const html = `<!doctype html>
   footer a:hover{text-decoration:underline}
   code{font-family:"IBM Plex Mono",monospace;background:var(--steel-800);padding:1px 5px;
     border-radius:4px;font-size:12.5px;color:var(--hivis)}
+  /* site header (same as the other pages): logo, por Pepper, EN|ES, back to the jobs */
+  .ajb-head{margin:-32px -16px 28px;background:var(--steel-900);border-bottom:2px solid var(--hivis)}
+  .ajb-head-in{max-width:1080px;margin:0 auto;padding:14px 16px;display:flex;justify-content:space-between;
+    align-items:center;gap:12px;flex-wrap:wrap}
+  .ajb-brand{display:flex;align-items:baseline;gap:11px;flex-wrap:wrap;text-decoration:none}
+  .ajb-logo{font-family:"Oswald",sans-serif;font-weight:700;letter-spacing:.04em;font-size:clamp(20px,5vw,28px);
+    line-height:1;text-transform:uppercase;color:var(--bone)}
+  .ajb-logo .boom{color:var(--hivis)}
+  .ajb-by{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--hivis);border:1px solid var(--line);
+    border-radius:999px;padding:3px 9px;white-space:nowrap}
+  .ajb-back{font-family:"IBM Plex Mono",monospace;font-size:12.5px;color:var(--bone);text-decoration:none;
+    border-bottom:2px solid var(--hivis);padding-bottom:1px;white-space:nowrap}
 </style>
 </head>
 <body>
-<main>
+<header class="ajb-head">
+  <div class="ajb-head-in">
+    <a class="ajb-brand" href="index.html"><span class="ajb-logo">AI<span class="boom">JOBS</span>BOOM</span><span class="ajb-by" data-i18n="pg_by">🌶 by Pepper</span></a>
+    <div class="ajb-lang" data-langsw></div>
+    <a class="ajb-back" href="index.html" data-i18n="pg_back">← back to the jobs</a>
+  </div>
+</header>
+<main data-lang="en">
   <h1>AIJOBSBOOM — Weekly Snapshot</h1>
   <p class="subhead">Free top-line numbers from the skilled-trades job board pipeline. Full history and machine-readable access via the x402 API below.</p>
   <span class="date mono">${fmtDate(latest.date)}</span>
 
   <section>
     <h2>The Board</h2>
-    <p class="headline"><b>${n(latest.rows_final)}</b> live jobs on the board (from <b>${n(latest.rows_in)}</b> pulled, <b>${scrubTotal}</b> scrubbed for garbage, mismatched locations, or off-trade roles).</p>
-  </section>
+    <p class="headline"><b>${n(latest.rows_final)}</b> listings in this week's pull (from <b>${n(latest.rows_in)}</b> pulled, <b>${scrubTotal}</b> scrubbed for garbage, mismatched locations, or off-trade roles).</p>
+${latest.board_rows_rolling != null && latest.board_rows_rolling !== "" ? `    <p class="headline"><b>${n(latest.board_rows_rolling)}</b> on the rolling board</p>
+` : ""}  </section>
 
   <section>
     <h2>Trade Counts</h2>
@@ -228,9 +272,77 @@ ${flagChips}
     <p style="margin-top:12px"><a href="https://aijobsboom.com">aijobsboom.com</a></p>
   </footer>
 </main>
+<main data-lang="es" hidden>
+  <h1>AIJOBSBOOM — Resumen semanal</h1>
+  <p class="subhead">Los números principales, gratis, del proceso que arma la bolsa de trabajo para oficios. El historial completo y el acceso para máquinas, con la API x402 de abajo.</p>
+  <span class="date mono">${fmtDateEs(latest.date)}</span>
+
+  <section>
+    <h2>La bolsa</h2>
+    <p class="headline"><b>${n(latest.rows_final)}</b> anuncios en la corrida de esta semana (de <b>${n(latest.rows_in)}</b> recolectados, <b>${scrubTotal}</b> descartados por basura, ubicaciones que no cuadran o puestos que no son de oficio).</p>
+${latest.board_rows_rolling != null && latest.board_rows_rolling !== "" ? `    <p class="headline"><b>${n(latest.board_rows_rolling)}</b> en el tablero acumulado</p>
+` : ""}  </section>
+
+  <section>
+    <h2>Conteo por oficio</h2>
+    <div class="stats-grid">
+${tradeRowsEs}
+    </div>
+  </section>
+
+  <section>
+    <h2>Señales y beneficios</h2>
+    <div class="chips">
+${flagChipsEs}
+    </div>
+  </section>
+
+  <footer>
+    <p>Esta página se genera sola con la última corrida y siempre es gratis. El historial, las series semanales y el acceso por programa (incluidas herramientas MCP para agentes) están disponibles por una tarifa pequeña por consulta con la <b>API x402 de AIJOBSBOOM</b>:</p>
+    <p style="margin-top:8px">
+      <code>GET /snapshot</code> — $0.01 USDC en Solana &nbsp;·&nbsp;
+      <code>GET /series?weeks=N</code> — $0.10 USDC en Solana &nbsp;·&nbsp;
+      <code>GET /methodology</code> — gratis
+    </p>
+
+    <div style="margin-top:14px;padding:14px 16px;background:var(--steel-800);border:1px solid var(--hivis);border-radius:8px">
+      <p style="color:var(--hivis);font-family:'Oswald',sans-serif;font-weight:700;text-transform:uppercase;font-size:13px;letter-spacing:.3px">Plan para personas</p>
+      <p style="margin-top:6px"><b>$299/año</b> — sin billetera y sin API. Recibe el resumen semanal
+      directo en tu correo, sin programar nada.</p>
+      <a href="mailto:pepper@aijobsboom.com?subject=Annual%20Data%20License%20(%24299%2Fyr)"
+        style="display:inline-block;margin-top:10px;padding:11px 20px;background:var(--hivis);
+        color:var(--steel-900);font-family:'Oswald',sans-serif;font-weight:700;
+        text-transform:uppercase;font-size:13px;letter-spacing:.3px;text-decoration:none;
+        border-radius:6px">Escribe a pepper@aijobsboom.com para suscribirte →</a>
+    </div>
+
+    <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--line)">
+      <p style="color:var(--bone);font-weight:600">¿Qué es x402?</p>
+      <p style="margin-top:4px">x402 es un protocolo de pagos abierto, nativo de HTTP (creado por Coinbase), que deja
+      que cualquier script o agente de IA pague por consulta en USDC — sin cuentas, sin claves de API y
+      sin suscripciones. Si llamas a un endpoint de pago sin pagar, te regresa un HTTP 402 con el precio;
+      un cliente compatible con x402 firma un pago chico en USDC y vuelve a intentar solo, y los datos
+      llegan en esa misma consulta.</p>
+
+      <p style="margin-top:12px;color:var(--bone);font-weight:600">Cómo pagar</p>
+      <ol style="margin:4px 0 0 18px;padding:0">
+        <li>Consigue una billetera de <b>Solana</b> (Phantom, Solflare o Coinbase Wallet configurada para Solana).</li>
+        <li>Ponle unos cuantos dólares en <b>USDC</b> — a $0.01–$0.10 por consulta, eso alcanza para cientos de consultas.</li>
+        <li>Apunta el cliente HTTP de tu script o agente al endpoint (o usa el servidor MCP <code>aijobsboom-x402</code>) — el pago se hace solo en cada consulta, sin aprobarlo a mano.</li>
+      </ol>
+
+      <p style="margin-top:12px">¿No eres programador? Mira el Plan para personas de arriba —
+      por $299/año recibes el resumen semanal directo, sin billetera ni API.</p>
+    </div>
+
+    <p style="margin-top:12px"><a href="https://aijobsboom.com">aijobsboom.com</a></p>
+  </footer>
+</main>
+<script src="i18n.js?v=4"></script>
+<script src="i18n-page.js?v=2"></script>
 </body>
 </html>
 `;
 
 writeFileSync(join(__dirname, "teaser.html"), html, "utf-8");
-console.log(`wrote teaser.html from ${latest.date} row`);
+console.log(`wrote teaser.html (EN + ES) from ${latest.date} row`);
