@@ -28,7 +28,7 @@ import { createFacilitatorConfig } from "@coinbase/x402";
 import statsCsvText from "./data/stats.csv";
 import { createMonitor } from "./src/monitor.js";
 
-const VERSION = "1.4.0";
+const VERSION = "1.5.0";
 
 const app = new Hono();
 
@@ -121,7 +121,7 @@ const SCHEMA_UNADVERTISED_COLUMNS = new Set(["wage_median_by_trade", "corrected_
 // Columns whose cells are JSON-encoded strings (quoted in the CSV), not
 // numbers. Everything else besides `date` is numeric or null.
 const JSON_STRING_COLUMNS = new Set(["top_employers", "wage_floor_by_trade", "new_location_velocity",
-  "wage_median_by_trade"]);
+  "wage_median_by_trade", "buildout_projects"]);
 
 // JSON schema for one stats row, built from the bundled CSV header so it
 // tracks new pipeline columns automatically. This is what the x402 Bazaar
@@ -238,6 +238,33 @@ re-checked against current scrub rules). This API does not change:
 rows_final and every other column still count this run's pull only, so
 no row changes meaning. The site's own count (board_rows_rolling) is kept
 in the pipeline's records but is not part of this API.
+Oct 17 2026: the site board is now the union of the last two pulls (this
+pull and the one before), not 14 calendar days, so an off-day pull can
+never fold in a third. API columns are unaffected.
+
+BUILDOUT PROJECTS (column buildout_projects, added Oct 17 2026)
+JSON string: a list of that week's verified PUBLIC buildout announcements
+(data centers, the power and grid work feeding them, the mines supplying
+them). Each item: place, project, owner, dollars, mw, planned_mw,
+construction_jobs, permanent_jobs, first_power_year, status, source_url,
+source_kind (primary | trade press | trade press citing filing | news).
+mw is OPERATING capacity only; planned capacity is planned_mw, never added
+to mw. A part-built project states its parts in status ("unit 1 operating,
+2 units planned"). Any number no public source published is null, never an
+estimate; a figure seen only in a search snippet is not recorded. These
+are public announcements, not job listings: the owners and source URLs
+are the announcers' own, nothing from the listing feeds. Null before
+Oct 17 2026.
+
+OCT 17 2026 RULES (first applied to the 2026-10-17 row)
+Hourly pay is kept up to $150/hr for every trade (was $75; above $150 it
+still drops as suspect), and a pay written with cents in a listing now
+parses -- 11 of the 24-row rise in employer-posted six-figure on that row
+came from the ceiling, most of the rest from cents. A trade row under
+$18/hr is apprentice-tier and leaves the wage-floor/median sample. "No
+CDL", "Non-CDL" and "CDL not required" titles are not CDL. For named
+mining employers, a listing with no number whose link is the employer's
+own posting page has its pay read off that page (aggregator copies never).
 
 CADENCE
 Rows are appended per pipeline run, not strictly one per calendar week --
@@ -456,7 +483,7 @@ app.use(
     price: `$${env.SNAPSHOT_PRICE_USDC || "0.01"}`,
     config: {
       description:
-        "Weekly US blue-collar job-market snapshot: oilfield, mining, data-center construction; trade counts, wage floors with sample sizes, per-diem/travel/sign-on flags, rig count, EIA prices, grid demand, aggregator share. Updated Sundays.",
+        "Weekly US blue-collar job-market snapshot: oilfield, mining, data-center construction; trade counts, wage floors with sample sizes, per-diem/travel/sign-on flags, rig count, EIA prices, grid demand, aggregator share, verified buildout announcements. Updated Sundays.",
       mimeType: "application/json",
       discoverable: true,
       outputSchema: ROW_SCHEMA,
@@ -480,7 +507,7 @@ app.use(
     price: `$${env.SERIES_PRICE_USDC || "0.10"}`,
     config: {
       description:
-        "Multi-week US blue-collar job-market series (last N weekly snapshots, oldest to newest, ?weeks=N, default 8): oilfield, mining, data-center construction; trade counts, wage floors with sample sizes, per-diem/travel/sign-on flags, rig count, EIA prices, grid demand, aggregator share. Updated Sundays.",
+        "Multi-week US blue-collar job-market series (last N weekly snapshots, oldest to newest, ?weeks=N, default 8): oilfield, mining, data-center construction; trade counts, wage floors with sample sizes, per-diem/travel/sign-on flags, rig count, EIA prices, grid demand, aggregator share, verified buildout announcements. Updated Sundays.",
       mimeType: "application/json",
       discoverable: true,
       inputSchema: {
