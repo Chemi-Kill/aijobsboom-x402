@@ -266,6 +266,24 @@ CDL", "Non-CDL" and "CDL not required" titles are not CDL. For named
 mining employers, a listing with no number whose link is the employer's
 own posting page has its pay read off that page (aggregator copies never).
 
+OCT 25 2026 RULES (first applied to the 2026-10-25 row)
+Staffing-agency and recruiter rows never set a wage floor or move a
+median, and neither does a title listing three or more roles split by
+commas or slashes; both still count in the trade totals. Parcel-carrier
+delivery, package and distribution-center driver titles are not CDL unless
+the title says CDL, and an off-road or mine haul truck driver is not CDL
+unless CDL is stated. Lanes: parcel carriers, and government, city,
+county, state, school and university employers, are never oilfield or
+mining unless the title carries oilfield or mining wording; manufacturing
+production work is never mining; a row matched only by a town's name
+(Weatherford, Texas) is removed. Listings re-hosted by scraper sites (not
+a job board, an employer's own site or a known applicant-tracking system)
+are removed. Listings from employers' own Workday career sites now carry
+the employer's name, so they count in top_employers. A feed's location for
+a listing can differ from the linked posting's; pay read from an
+employer's page is read from the linked page. Together these lowered
+rows_final and the wage-sample n on the 2026-10-25 row.
+
 CADENCE
 Rows are appended per pipeline run, not strictly one per calendar week --
 a single day can have multiple rows if the pipeline ran more than once
