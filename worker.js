@@ -284,6 +284,29 @@ a listing can differ from the linked posting's; pay read from an
 employer's page is read from the linked page. Together these lowered
 rows_final and the wage-sample n on the 2026-10-25 row.
 
+NOV 1 2026 RULES (first applied to the 2026-11-01 row)
+In any pay sample, rows with the same employer, title and pay count once,
+which also collapses one posting carried by several boards. Staffing and
+recruiter rows are out of every pay sample, out of the employer-posted
+six-figure count and out of the alert emails; they still count in the
+trade totals. In top_employers a staffing firm is tagged "(staffing)";
+recruiting platforms and an aggregator's own name as the employer are
+left out of it. One trade per row: a title naming several trades is
+counted once (HVAC, then lineman, welder, electrician, mechanic, CDL).
+"Class A" alone is not CDL; a CDL row needs CDL, driver, truck or haul
+wording. A filter-technician title is not an HVAC technician for the pay
+sample. Lanes: retail employers are never datacenter, oilfield or
+mining; irrigation and water districts join the public-employer list;
+aviation employers are never pipeline_gas; a parcel carrier's row in
+datacenter keeps its row with no lane, and a refrigeration contractor's
+row is datacenter only when its title says data center. An aggregator's
+pay estimate is nulled on any row whose employer posted its own pay for
+the same title. buildout_projects gains four projects (14) and two status
+words, "proposed" (announced, no filing) and "study" (feasibility, no
+investment decision). Together these lowered the wage-sample n, the
+six-figure count and the mechanic and CDL totals on the 2026-11-01 row;
+the six-figure series has a step at this row.
+
 CADENCE
 Rows are appended per pipeline run, not strictly one per calendar week --
 a single day can have multiple rows if the pipeline ran more than once
