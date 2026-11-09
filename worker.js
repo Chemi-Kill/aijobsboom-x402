@@ -307,6 +307,23 @@ investment decision). Together these lowered the wage-sample n, the
 six-figure count and the mechanic and CDL totals on the 2026-11-01 row;
 the six-figure series has a step at this row.
 
+NOV 8 2026 RULES (first applied to the 2026-11-08 row)
+Two series steps. Trade totals and top_employers collapse an (employer,
+title, pay) key to one count only when it appears 10 or more times in
+the pull (one posting sprayed across cities); under 10 every row counts.
+On this row 24 keys met the threshold and 468 rows collapsed, so the
+electrician, HVAC, mechanic and CDL totals read under the old way of
+counting the same pull. The pay samples keep their always-once collapse.
+fairchance counts employer-direct rows only from this row forward. Six
+more staffing and platform names are out of every sample; a roofing
+contractor's rows have no lane and no sample; a title with "sales"
+leaves every pay sample; BIM is a desk title. buildout_projects gains
+four projects (18): a Texas data center campus under construction, a
+Kansas data center campus and a Wyoming county land sale (both
+proposed) and an Arizona copper mine (announced; first copper 2029).
+Feed note: one JSearch query and four Adzuna queries returned nothing
+after a re-run; the row is published as pulled.
+
 CADENCE
 Rows are appended per pipeline run, not strictly one per calendar week --
 a single day can have multiple rows if the pipeline ran more than once
