@@ -324,6 +324,24 @@ proposed) and an Arizona copper mine (announced; first copper 2029).
 Feed note: one JSearch query and four Adzuna queries returned nothing
 after a re-run; the row is published as pulled.
 
+NOV 15 2026 RULES (first applied to the 2026-11-15 row)
+six_figure_posted now follows the wage-sample title rule: entry-tier
+titles (trainee, apprentice, helper, "in training") are out. A row with
+no lane is out of every sample, as roofing rows already were. Five more
+staffing names are out of every sample. A row located in the city of
+Alcoa, Tennessee leaves the mining lane unless its employer or title is
+mining. An assembler title that does not say "mechanic" is not the
+mechanic trade, and a career.io copy of a posting is out of the pay
+samples. Two desk titles sprayed
+across 41 cities by one employer are removed. An oilfield row whose
+title names its own lane (mining, solar) is filed there. These lowered
+the six-figure count and the mechanic and CDL sample n on this row.
+buildout_projects gains four projects (22): an Arkansas iron plant under
+construction, an Ohio data center campus and a Texas gas plant and data
+center (both proposed) and an Arizona copper mine (approved; first
+copper 2029). Feed note: seven Adzuna queries were re-run once, two
+returned nothing; the row is published as pulled.
+
 CADENCE
 Rows are appended per pipeline run, not strictly one per calendar week --
 a single day can have multiple rows if the pipeline ran more than once
